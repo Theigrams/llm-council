@@ -1,16 +1,28 @@
 """FastAPI backend for LLM Council."""
 
+import asyncio
+import json
+import uuid
+from typing import Any, Dict, List
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any
-import uuid
-import json
-import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, stage1_collect_responses_stream, stage2_collect_rankings_stream, stage3_synthesize_final_stream
+from .config import get_config, reload_config
+from .council import (
+    calculate_aggregate_rankings,
+    generate_conversation_title,
+    run_full_council,
+    stage1_collect_responses,
+    stage1_collect_responses_stream,
+    stage2_collect_rankings,
+    stage2_collect_rankings_stream,
+    stage3_synthesize_final,
+    stage3_synthesize_final_stream,
+)
 from .llm_client import query_model_stream
 
 app = FastAPI(title="LLM Council API")
@@ -61,6 +73,34 @@ class Conversation(BaseModel):
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "service": "LLM Council API"}
+
+
+@app.post("/api/config/reload")
+async def reload_config_endpoint():
+    """Reload configuration from file without restarting the server."""
+    try:
+        config = reload_config()
+        return {
+            "status": "ok",
+            "message": "Configuration reloaded successfully",
+            "council": config.get("council", []),
+            "chairman": config.get("chairman"),
+            "title_generator": config.get("title_generator")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload config: {str(e)}")
+
+
+@app.get("/api/config")
+async def get_config_endpoint():
+    """Get current configuration (without sensitive data)."""
+    config = get_config()
+    return {
+        "council": config.get("council", []),
+        "chairman": config.get("chairman"),
+        "title_generator": config.get("title_generator"),
+        "available_models": list(config.get("models", {}).keys())
+    }
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])

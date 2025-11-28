@@ -32,6 +32,12 @@ def get_config():
     """Get the loaded configuration."""
     return load_config()
 
+def reload_config():
+    """Force reload configuration from file."""
+    global _config
+    _config = None
+    return load_config()
+
 def get_model_config(model_name: str) -> dict:
     """Get configuration for a specific model."""
     config = get_config()
