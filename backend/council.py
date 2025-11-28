@@ -1,8 +1,8 @@
 """3-stage LLM Council orchestration."""
 
-from typing import List, Dict, Any, Tuple
-from .llm_client import query_models_parallel, query_model
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+from typing import List, Dict, Any, Tuple, AsyncGenerator
+from .llm_client import query_models_parallel, query_model, query_model_stream, query_models_parallel_stream
+from .config import get_council_models, get_chairman_model, get_title_generator_model
 
 
 async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
@@ -18,7 +18,7 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     messages = [{"role": "user", "content": user_query}]
 
     # Query all models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    responses = await query_models_parallel(get_council_models(), messages)
 
     # Format results
     stage1_results = []
@@ -95,7 +95,7 @@ Now provide your evaluation and ranking:"""
     messages = [{"role": "user", "content": ranking_prompt}]
 
     # Get rankings from all council models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    responses = await query_models_parallel(get_council_models(), messages)
 
     # Format results
     stage2_results = []
@@ -159,17 +159,18 @@ Provide a clear, well-reasoned final answer that represents the council's collec
     messages = [{"role": "user", "content": chairman_prompt}]
 
     # Query the chairman model
-    response = await query_model(CHAIRMAN_MODEL, messages)
+    chairman_model = get_chairman_model()
+    response = await query_model(chairman_model, messages)
 
     if response is None:
         # Fallback if chairman fails
         return {
-            "model": CHAIRMAN_MODEL,
+            "model": chairman_model,
             "response": "Error: Unable to generate final synthesis."
         }
 
     return {
-        "model": CHAIRMAN_MODEL,
+        "model": chairman_model,
         "response": response.get('content', '')
     }
 
@@ -274,8 +275,8 @@ Title:"""
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    # Use grok for title generation (fast)
-    response = await query_model("grok-4-fast-reasoning", messages, timeout=30.0)
+    # Use configured title generator model
+    response = await query_model(get_title_generator_model(), messages, timeout=30.0)
 
     if response is None:
         # Fallback to a generic title
@@ -333,3 +334,242 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     }
 
     return stage1_results, stage2_results, stage3_result, metadata
+
+
+# ==================== Streaming Versions ====================
+
+async def stage1_collect_responses_stream(
+    user_query: str
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Stage 1 with token-level streaming.
+
+    Yields:
+        Events: stage1_token, stage1_model_complete, stage1_complete
+    """
+    messages = [{"role": "user", "content": user_query}]
+    accumulated_responses: Dict[str, str] = {}
+
+    async for event in query_models_parallel_stream(get_council_models(), messages):
+        if event["type"] == "delta":
+            # Initialize if first token for this model
+            if event["model"] not in accumulated_responses:
+                accumulated_responses[event["model"]] = ""
+            accumulated_responses[event["model"]] += event["content"]
+
+            yield {
+                "type": "stage1_token",
+                "model": event["model"],
+                "content": event["content"]
+            }
+
+        elif event["type"] == "model_complete":
+            yield {
+                "type": "stage1_model_complete",
+                "model": event["model"],
+                "content": event["content"]
+            }
+
+        elif event["type"] == "error":
+            yield {
+                "type": "stage1_error",
+                "model": event["model"],
+                "message": event.get("message", "Unknown error")
+            }
+
+        elif event["type"] == "all_done":
+            # Format final results
+            stage1_results = [
+                {"model": m, "response": r}
+                for m, r in accumulated_responses.items()
+            ]
+            yield {
+                "type": "stage1_complete",
+                "data": stage1_results
+            }
+
+
+async def stage2_collect_rankings_stream(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]]
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Stage 2 with token-level streaming.
+
+    Yields:
+        Events: stage2_token, stage2_model_complete, stage2_complete (with metadata)
+    """
+    # Create anonymized labels
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+    label_to_model = {
+        f"Response {label}": result['model']
+        for label, result in zip(labels, stage1_results)
+    }
+
+    # Build ranking prompt
+    responses_text = "\n\n".join([
+        f"Response {label}:\n{result['response']}"
+        for label, result in zip(labels, stage1_results)
+    ])
+
+    ranking_prompt = f"""You are evaluating different responses to the following question:
+
+Question: {user_query}
+
+Here are the responses from different models (anonymized):
+
+{responses_text}
+
+Your task:
+1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
+2. Then, at the very end of your response, provide a final ranking.
+
+IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
+- Start with the line "FINAL RANKING:" (all caps, with colon)
+- Then list the responses from best to worst as a numbered list
+- Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
+- Do not add any other text or explanations in the ranking section
+
+Example of the correct format for your ENTIRE response:
+
+Response A provides good detail on X but misses Y...
+Response B is accurate but lacks depth on Z...
+Response C offers the most comprehensive answer...
+
+FINAL RANKING:
+1. Response C
+2. Response A
+3. Response B
+
+Now provide your evaluation and ranking:"""
+
+    messages = [{"role": "user", "content": ranking_prompt}]
+    accumulated_rankings: Dict[str, str] = {}
+
+    async for event in query_models_parallel_stream(get_council_models(), messages):
+        if event["type"] == "delta":
+            if event["model"] not in accumulated_rankings:
+                accumulated_rankings[event["model"]] = ""
+            accumulated_rankings[event["model"]] += event["content"]
+
+            yield {
+                "type": "stage2_token",
+                "model": event["model"],
+                "content": event["content"]
+            }
+
+        elif event["type"] == "model_complete":
+            full_text = event["content"]
+            parsed = parse_ranking_from_text(full_text)
+            yield {
+                "type": "stage2_model_complete",
+                "model": event["model"],
+                "ranking": full_text,
+                "parsed_ranking": parsed
+            }
+
+        elif event["type"] == "error":
+            yield {
+                "type": "stage2_error",
+                "model": event["model"],
+                "message": event.get("message", "Unknown error")
+            }
+
+        elif event["type"] == "all_done":
+            # Format final results
+            stage2_results = []
+            for model, ranking_text in accumulated_rankings.items():
+                parsed = parse_ranking_from_text(ranking_text)
+                stage2_results.append({
+                    "model": model,
+                    "ranking": ranking_text,
+                    "parsed_ranking": parsed
+                })
+
+            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+            yield {
+                "type": "stage2_complete",
+                "data": stage2_results,
+                "metadata": {
+                    "label_to_model": label_to_model,
+                    "aggregate_rankings": aggregate_rankings
+                }
+            }
+
+
+async def stage3_synthesize_final_stream(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]]
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Stage 3 with token-level streaming (single model).
+
+    Yields:
+        Events: stage3_token, stage3_complete
+    """
+    # Build chairman prompt
+    stage1_text = "\n\n".join([
+        f"Model: {result['model']}\nResponse: {result['response']}"
+        for result in stage1_results
+    ])
+
+    stage2_text = "\n\n".join([
+        f"Model: {result['model']}\nRanking: {result['ranking']}"
+        for result in stage2_results
+    ])
+
+    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
+
+Original Question: {user_query}
+
+STAGE 1 - Individual Responses:
+{stage1_text}
+
+STAGE 2 - Peer Rankings:
+{stage2_text}
+
+Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
+- The individual responses and their insights
+- The peer rankings and what they reveal about response quality
+- Any patterns of agreement or disagreement
+
+Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
+
+    messages = [{"role": "user", "content": chairman_prompt}]
+    chairman_model = get_chairman_model()
+    accumulated = ""
+
+    async for event in query_model_stream(chairman_model, messages):
+        if event["type"] == "delta":
+            accumulated += event["content"]
+            yield {
+                "type": "stage3_token",
+                "model": chairman_model,
+                "content": event["content"]
+            }
+
+        elif event["type"] == "done":
+            yield {
+                "type": "stage3_complete",
+                "data": {
+                    "model": chairman_model,
+                    "response": accumulated
+                }
+            }
+
+        elif event["type"] == "error":
+            yield {
+                "type": "stage3_error",
+                "model": chairman_model,
+                "message": event.get("message", "Unknown error")
+            }
+            # Send complete with error message
+            yield {
+                "type": "stage3_complete",
+                "data": {
+                    "model": chairman_model,
+                    "response": accumulated or "Error: Unable to generate final synthesis."
+                }
+            }

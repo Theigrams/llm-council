@@ -73,37 +73,40 @@ export default function ChatInterface({
                   <div className="message-label">LLM Council</div>
 
                   {/* Stage 1 */}
-                  {msg.loading?.stage1 && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Running Stage 1: Collecting individual responses...</span>
-                    </div>
+                  {(msg.loading?.stage1 || Object.keys(msg.streaming?.stage1 || {}).length > 0) && !msg.stage1 && (
+                    <Stage1
+                      responses={null}
+                      streaming={msg.streaming?.stage1}
+                    />
                   )}
-                  {msg.stage1 && <Stage1 responses={msg.stage1} />}
+                  {msg.stage1 && <Stage1 responses={msg.stage1} streaming={null} />}
 
                   {/* Stage 2 */}
-                  {msg.loading?.stage2 && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Running Stage 2: Peer rankings...</span>
-                    </div>
+                  {(msg.loading?.stage2 || Object.keys(msg.streaming?.stage2 || {}).length > 0) && !msg.stage2 && (
+                    <Stage2
+                      rankings={null}
+                      streaming={msg.streaming?.stage2}
+                      labelToModel={null}
+                      aggregateRankings={null}
+                    />
                   )}
                   {msg.stage2 && (
                     <Stage2
                       rankings={msg.stage2}
+                      streaming={null}
                       labelToModel={msg.metadata?.label_to_model}
                       aggregateRankings={msg.metadata?.aggregate_rankings}
                     />
                   )}
 
                   {/* Stage 3 */}
-                  {msg.loading?.stage3 && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Running Stage 3: Final synthesis...</span>
-                    </div>
+                  {(msg.loading?.stage3 || msg.streaming?.stage3) && !msg.stage3 && (
+                    <Stage3
+                      finalResponse={null}
+                      streaming={msg.streaming?.stage3}
+                    />
                   )}
-                  {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+                  {msg.stage3 && <Stage3 finalResponse={msg.stage3} streaming={null} />}
                 </div>
               )}
             </div>

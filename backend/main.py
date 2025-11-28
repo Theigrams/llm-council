@@ -10,7 +10,8 @@ import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, stage1_collect_responses_stream, stage2_collect_rankings_stream, stage3_synthesize_final_stream
+from .llm_client import query_model_stream
 
 app = FastAPI(title="LLM Council API")
 
@@ -32,6 +33,12 @@ class CreateConversationRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str
+
+
+class TestStreamRequest(BaseModel):
+    """Request to test streaming with a single model."""
+    model: str = "grok-4-fast-reasoning"
+    message: str = "Hello"
 
 
 class ConversationMetadata(BaseModel):
@@ -123,11 +130,33 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     }
 
 
+@app.post("/api/test/stream")
+async def test_stream(request: TestStreamRequest):
+    """
+    Test endpoint for single model streaming.
+    Use with: curl -N -X POST http://localhost:8001/api/test/stream -H "Content-Type: application/json" -d '{"model": "grok-4-fast-reasoning", "message": "Hello"}'
+    """
+    messages = [{"role": "user", "content": request.message}]
+
+    async def event_generator():
+        async for event in query_model_stream(request.model, messages):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
 @app.post("/api/conversations/{conversation_id}/message/stream")
 async def send_message_stream(conversation_id: str, request: SendMessageRequest):
     """
-    Send a message and stream the 3-stage council process.
-    Returns Server-Sent Events as each stage completes.
+    Send a message and stream the 3-stage council process with token-level streaming.
+    Returns Server-Sent Events for each token and stage completion.
     """
     # Check if conversation exists
     conversation = storage.get_conversation(conversation_id)
@@ -147,21 +176,33 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Stage 1: Collect responses
+            # Stage 1: Stream tokens
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content)
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+            stage1_results = None
+            async for event in stage1_collect_responses_stream(request.content):
+                yield f"data: {json.dumps(event)}\n\n"
+                if event["type"] == "stage1_complete":
+                    stage1_results = event["data"]
 
-            # Stage 2: Collect rankings
+            # Stage 2: Stream tokens
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
-            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+            stage2_results = None
+            metadata = None
+            if stage1_results:
+                async for event in stage2_collect_rankings_stream(request.content, stage1_results):
+                    yield f"data: {json.dumps(event)}\n\n"
+                    if event["type"] == "stage2_complete":
+                        stage2_results = event["data"]
+                        metadata = event["metadata"]
 
-            # Stage 3: Synthesize final answer
+            # Stage 3: Stream tokens
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            stage3_result = None
+            if stage1_results and stage2_results:
+                async for event in stage3_synthesize_final_stream(request.content, stage1_results, stage2_results):
+                    yield f"data: {json.dumps(event)}\n\n"
+                    if event["type"] == "stage3_complete":
+                        stage3_result = event["data"]
 
             # Wait for title generation if it was started
             if title_task:
@@ -170,12 +211,13 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
             # Save complete assistant message
-            storage.add_assistant_message(
-                conversation_id,
-                stage1_results,
-                stage2_results,
-                stage3_result
-            )
+            if stage1_results and stage2_results and stage3_result:
+                storage.add_assistant_message(
+                    conversation_id,
+                    stage1_results,
+                    stage2_results,
+                    stage3_result
+                )
 
             # Send completion event
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"

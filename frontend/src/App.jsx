@@ -81,6 +81,12 @@ function App() {
           stage2: false,
           stage3: false,
         },
+        // NEW: Streaming state for each model
+        streaming: {
+          stage1: {},  // { "model-name": "partial text..." }
+          stage2: {},  // { "model-name": "partial ranking..." }
+          stage3: "",  // chairman partial text
+        },
       };
 
       // Add the partial assistant message
@@ -97,6 +103,18 @@ function App() {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
               lastMsg.loading.stage1 = true;
+              lastMsg.streaming.stage1 = {};
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage1_token':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              const model = event.model;
+              lastMsg.streaming.stage1[model] =
+                (lastMsg.streaming.stage1[model] || '') + event.content;
               return { ...prev, messages };
             });
             break;
@@ -108,6 +126,7 @@ function App() {
               lastMsg.stage1 = event.data;
               lastMsg.loading.stage1 = false;
               lastMsg.loading.stage2 = true;  // Auto-start stage2 loading
+              lastMsg.streaming.stage1 = {};  // Clear streaming state
               return { ...prev, messages };
             });
             break;
@@ -117,6 +136,18 @@ function App() {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
               lastMsg.loading.stage2 = true;
+              lastMsg.streaming.stage2 = {};
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage2_token':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              const model = event.model;
+              lastMsg.streaming.stage2[model] =
+                (lastMsg.streaming.stage2[model] || '') + event.content;
               return { ...prev, messages };
             });
             break;
@@ -129,6 +160,7 @@ function App() {
               lastMsg.metadata = event.metadata;
               lastMsg.loading.stage2 = false;
               lastMsg.loading.stage3 = true;  // Auto-start stage3 loading
+              lastMsg.streaming.stage2 = {};  // Clear streaming state
               return { ...prev, messages };
             });
             break;
@@ -138,6 +170,16 @@ function App() {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
               lastMsg.loading.stage3 = true;
+              lastMsg.streaming.stage3 = '';
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage3_token':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.streaming.stage3 += event.content;
               return { ...prev, messages };
             });
             break;
@@ -148,6 +190,7 @@ function App() {
               const lastMsg = messages[messages.length - 1];
               lastMsg.stage3 = event.data;
               lastMsg.loading.stage3 = false;
+              lastMsg.streaming.stage3 = '';  // Clear streaming state
               return { ...prev, messages };
             });
             break;
