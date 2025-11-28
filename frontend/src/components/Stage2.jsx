@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import StreamingMarkdown from './StreamingMarkdown';
+import CopyButton from './CopyButton';
 import './Stage2.css';
 
 function deAnonymizeText(text, labelToModel) {
@@ -74,8 +75,13 @@ export default function Stage2({ rankings, streaming, labelToModel, aggregateRan
       </div>
 
       <div className="tab-content">
-        <div className="ranking-model">
-          {displayData[activeTab].model}
+        <div className="content-header">
+          <div className="ranking-model">
+            {displayData[activeTab].model}
+          </div>
+          {!displayData[activeTab].isStreaming && (
+            <CopyButton text={deAnonymizeText(displayData[activeTab].ranking, labelToModel)} />
+          )}
         </div>
         <div className="ranking-content markdown-content">
           <StreamingMarkdown

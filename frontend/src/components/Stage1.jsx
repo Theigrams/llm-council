@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import StreamingMarkdown from './StreamingMarkdown';
+import CopyButton from './CopyButton';
 import './Stage1.css';
 
 export default function Stage1({ responses, streaming }) {
@@ -53,7 +54,12 @@ export default function Stage1({ responses, streaming }) {
       </div>
 
       <div className="tab-content">
-        <div className="model-name">{displayData[activeTab].model}</div>
+        <div className="content-header">
+          <div className="model-name">{displayData[activeTab].model}</div>
+          {!displayData[activeTab].isStreaming && (
+            <CopyButton text={displayData[activeTab].response} />
+          )}
+        </div>
         <div className="response-text markdown-content">
           <StreamingMarkdown
             content={displayData[activeTab].response}

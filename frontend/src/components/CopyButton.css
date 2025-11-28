@@ -1,0 +1,53 @@
+.copy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f5f5f5;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  color: #666;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.copy-button:hover {
+  background: #e8e8e8;
+  border-color: #4a90e2;
+  color: #4a90e2;
+}
+
+.copy-button.copied {
+  background: #e8f5e9;
+  border-color: #4caf50;
+  color: #4caf50;
+}
+
+.copy-button svg {
+  flex-shrink: 0;
+}
+
+.copy-text {
+  white-space: nowrap;
+}
+
+/* Position wrapper for tab-content areas */
+.content-wrapper {
+  position: relative;
+}
+
+.content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.content-header .model-name,
+.content-header .ranking-model,
+.content-header .chairman-label {
+  margin-bottom: 0;
+}
+

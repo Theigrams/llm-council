@@ -1,4 +1,5 @@
 import StreamingMarkdown from './StreamingMarkdown';
+import CopyButton from './CopyButton';
 import './Stage3.css';
 
 export default function Stage3({ finalResponse, streaming }) {
@@ -22,9 +23,14 @@ export default function Stage3({ finalResponse, streaming }) {
     <div className="stage stage3">
       <h3 className="stage-title">Stage 3: Final Council Answer</h3>
       <div className="final-response">
-        <div className="chairman-label">
-          Chairman: {finalResponse?.model?.split('/')[1] || finalResponse?.model || 'Synthesizing...'}
-          {isStreaming && <span className="streaming-indicator"> (streaming...)</span>}
+        <div className="content-header">
+          <div className="chairman-label">
+            Chairman: {finalResponse?.model?.split('/')[1] || finalResponse?.model || 'Synthesizing...'}
+            {isStreaming && <span className="streaming-indicator"> (streaming...)</span>}
+          </div>
+          {!isStreaming && displayContent && (
+            <CopyButton text={displayContent} />
+          )}
         </div>
         <div className="final-text markdown-content">
           <StreamingMarkdown content={displayContent} isStreaming={isStreaming} />
