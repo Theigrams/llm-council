@@ -77,7 +77,7 @@ function App() {
         stage3: null,
         metadata: null,
         loading: {
-          stage1: false,
+          stage1: true,  // Start with stage1 loading
           stage2: false,
           stage3: false,
         },
@@ -107,6 +107,7 @@ function App() {
               const lastMsg = messages[messages.length - 1];
               lastMsg.stage1 = event.data;
               lastMsg.loading.stage1 = false;
+              lastMsg.loading.stage2 = true;  // Auto-start stage2 loading
               return { ...prev, messages };
             });
             break;
@@ -127,6 +128,7 @@ function App() {
               lastMsg.stage2 = event.data;
               lastMsg.metadata = event.metadata;
               lastMsg.loading.stage2 = false;
+              lastMsg.loading.stage3 = true;  // Auto-start stage3 loading
               return { ...prev, messages };
             });
             break;
