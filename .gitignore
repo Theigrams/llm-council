@@ -11,6 +11,7 @@ wheels/
 
 # Keys and secrets
 .env
+llm_config.json
 
 # Data files
 data/
@@ -19,3 +20,10 @@ data/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/

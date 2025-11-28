@@ -1,5 +1,19 @@
 # LLM Council
 
+> **Fork of [karpathy/llm-council](https://github.com/karpathy/llm-council)**
+
+## What's Changed
+
+This fork includes the following enhancements:
+
+- **Token-level Streaming**: Real-time typewriter effect for all 3 stages (not just stage-level updates)
+- **Flexible API Config**: JSON-based configuration supporting multiple API endpoints (OpenRouter, OpenAI, local LLMs, etc.)
+- **Enhanced Markdown**: Support for GFM tables and LaTeX math formulas ($x^2$, $$\sum_{i=1}^n$$)
+- **Delete Conversations**: Hover over a conversation to reveal the delete button
+- **Improved Scrolling**: Smart scroll behavior that respects user position during streaming
+
+---
+
 ![llmcouncil](header.jpg)
 
 The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, eg.c), you can group them into your "LLM Council". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
@@ -32,30 +46,35 @@ npm install
 cd ..
 ```
 
-### 2. Configure API Key
+### 2. Configure API
 
-Create a `.env` file in the project root:
+Copy the example config and add your API keys:
 
 ```bash
-OPENROUTER_API_KEY=sk-or-v1-...
+cp llm_config.example.json llm_config.json
 ```
 
-Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
+Edit `llm_config.json` with your API configuration:
 
-### 3. Configure Models (Optional)
-
-Edit `backend/config.py` to customize the council:
-
-```python
-COUNCIL_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
-]
-
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+```json
+{
+  "models": {
+    "gpt-4o": {
+      "api_url": "https://api.openai.com/v1/chat/completions",
+      "api_key": "your-api-key-here"
+    },
+    "claude-3-5-sonnet": {
+      "api_url": "https://api.anthropic.com/v1/messages",
+      "api_key": "your-api-key-here"
+    }
+  },
+  "council": ["gpt-4o", "claude-3-5-sonnet"],
+  "chairman": "gpt-4o",
+  "title_generator": "gpt-4o"
+}
 ```
+
+You can use any OpenAI-compatible API endpoint (OpenRouter, local LLMs, etc.).
 
 ## Running the Application
 
@@ -81,7 +100,7 @@ Then open http://localhost:5173 in your browser.
 
 ## Tech Stack
 
-- **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
+- **Backend:** FastAPI (Python 3.10+), async httpx
 - **Frontend:** React + Vite, react-markdown for rendering
 - **Storage:** JSON files in `data/conversations/`
 - **Package Management:** uv for Python, npm for JavaScript

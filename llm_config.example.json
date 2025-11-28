@@ -1,0 +1,23 @@
+{
+  "models": {
+    "gpt-4o": {
+      "api_url": "https://api.openai.com/v1/chat/completions",
+      "api_key": "your-api-key-here"
+    },
+    "claude-3-5-sonnet": {
+      "api_url": "https://api.anthropic.com/v1/messages",
+      "api_key": "your-api-key-here"
+    },
+    "gemini-pro": {
+      "api_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+      "api_key": "your-api-key-here"
+    }
+  },
+  "council": [
+    "gpt-4o",
+    "claude-3-5-sonnet",
+    "gemini-pro"
+  ],
+  "chairman": "gpt-4o",
+  "title_generator": "gpt-4o"
+}
