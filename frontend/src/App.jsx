@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import { api } from './api';
@@ -9,6 +9,78 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Throttle streaming updates: accumulate tokens in buffer, flush every frame
+  const streamingBufferRef = useRef({
+    stage1: {},
+    stage2: {},
+    stage3: ''
+  });
+  const rafIdRef = useRef(null);
+  const conversationRef = useRef(null);
+
+  // Keep conversationRef in sync
+  useEffect(() => {
+    conversationRef.current = currentConversation;
+  }, [currentConversation]);
+
+  // Flush streaming buffer to state (called via requestAnimationFrame)
+  const flushStreamingBuffer = useCallback(() => {
+    const buffer = streamingBufferRef.current;
+    const hasContent =
+      Object.keys(buffer.stage1).length > 0 ||
+      Object.keys(buffer.stage2).length > 0 ||
+      buffer.stage3;
+
+    if (hasContent && conversationRef.current) {
+      setCurrentConversation((prev) => {
+        if (!prev || prev.messages.length === 0) return prev;
+        const messages = [...prev.messages];
+        const lastMsg = { ...messages[messages.length - 1] };
+
+        // Merge stage1 buffer
+        if (Object.keys(buffer.stage1).length > 0) {
+          lastMsg.streaming = { ...lastMsg.streaming };
+          lastMsg.streaming.stage1 = { ...lastMsg.streaming.stage1 };
+          for (const [model, content] of Object.entries(buffer.stage1)) {
+            lastMsg.streaming.stage1[model] =
+              (lastMsg.streaming.stage1[model] || '') + content;
+          }
+        }
+
+        // Merge stage2 buffer
+        if (Object.keys(buffer.stage2).length > 0) {
+          lastMsg.streaming = { ...lastMsg.streaming };
+          lastMsg.streaming.stage2 = { ...lastMsg.streaming.stage2 };
+          for (const [model, content] of Object.entries(buffer.stage2)) {
+            lastMsg.streaming.stage2[model] =
+              (lastMsg.streaming.stage2[model] || '') + content;
+          }
+        }
+
+        // Merge stage3 buffer
+        if (buffer.stage3) {
+          lastMsg.streaming = { ...lastMsg.streaming };
+          lastMsg.streaming.stage3 = (lastMsg.streaming.stage3 || '') + buffer.stage3;
+        }
+
+        messages[messages.length - 1] = lastMsg;
+        return { ...prev, messages };
+      });
+
+      // Clear buffer
+      streamingBufferRef.current = { stage1: {}, stage2: {}, stage3: '' };
+    }
+
+    rafIdRef.current = null;
+  }, []);
+
+  // Schedule a buffer flush if not already scheduled
+  const scheduleFlush = useCallback(() => {
+    if (!rafIdRef.current) {
+      rafIdRef.current = requestAnimationFrame(flushStreamingBuffer);
+    }
+  }, [flushStreamingBuffer]);
 
   // Load conversations on mount
   useEffect(() => {
@@ -109,17 +181,19 @@ function App() {
             break;
 
           case 'stage1_token':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              const model = event.model;
-              lastMsg.streaming.stage1[model] =
-                (lastMsg.streaming.stage1[model] || '') + event.content;
-              return { ...prev, messages };
-            });
+            // Accumulate to buffer instead of immediate setState
+            streamingBufferRef.current.stage1[event.model] =
+              (streamingBufferRef.current.stage1[event.model] || '') + event.content;
+            scheduleFlush();
             break;
 
           case 'stage1_complete':
+            // Flush any remaining buffer before completing
+            if (rafIdRef.current) {
+              cancelAnimationFrame(rafIdRef.current);
+              rafIdRef.current = null;
+            }
+            streamingBufferRef.current = { stage1: {}, stage2: {}, stage3: '' };
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
@@ -142,17 +216,19 @@ function App() {
             break;
 
           case 'stage2_token':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              const model = event.model;
-              lastMsg.streaming.stage2[model] =
-                (lastMsg.streaming.stage2[model] || '') + event.content;
-              return { ...prev, messages };
-            });
+            // Accumulate to buffer instead of immediate setState
+            streamingBufferRef.current.stage2[event.model] =
+              (streamingBufferRef.current.stage2[event.model] || '') + event.content;
+            scheduleFlush();
             break;
 
           case 'stage2_complete':
+            // Flush any remaining buffer before completing
+            if (rafIdRef.current) {
+              cancelAnimationFrame(rafIdRef.current);
+              rafIdRef.current = null;
+            }
+            streamingBufferRef.current = { stage1: {}, stage2: {}, stage3: '' };
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
@@ -176,15 +252,18 @@ function App() {
             break;
 
           case 'stage3_token':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.streaming.stage3 += event.content;
-              return { ...prev, messages };
-            });
+            // Accumulate to buffer instead of immediate setState
+            streamingBufferRef.current.stage3 += event.content;
+            scheduleFlush();
             break;
 
           case 'stage3_complete':
+            // Flush any remaining buffer before completing
+            if (rafIdRef.current) {
+              cancelAnimationFrame(rafIdRef.current);
+              rafIdRef.current = null;
+            }
+            streamingBufferRef.current = { stage1: {}, stage2: {}, stage3: '' };
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];

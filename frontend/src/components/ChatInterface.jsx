@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import Stage1 from './Stage1';
 import Stage2 from './Stage2';
@@ -11,15 +11,44 @@ export default function ChatInterface({
   isLoading,
 }) {
   const [input, setInput] = useState('');
-  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const userScrolledRef = useRef(false);
+  const lastMessageCountRef = useRef(0);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  // Check if user is near bottom (within 100px)
+  const isNearBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
+    const threshold = 100;
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+  }, []);
 
+  // Handle user scroll
+  const handleScroll = useCallback(() => {
+    userScrolledRef.current = !isNearBottom();
+  }, [isNearBottom]);
+
+  // Scroll to bottom only when appropriate
+  const scrollToBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (container && !userScrolledRef.current) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, []);
+
+  // Scroll on new messages only
   useEffect(() => {
+    if (!conversation) return;
+    const currentCount = conversation.messages?.length || 0;
+
+    // Reset scroll flag on new user message
+    if (currentCount > lastMessageCountRef.current) {
+      userScrolledRef.current = false;
+      lastMessageCountRef.current = currentCount;
+    }
+
     scrollToBottom();
-  }, [conversation]);
+  }, [conversation, scrollToBottom]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -50,7 +79,7 @@ export default function ChatInterface({
 
   return (
     <div className="chat-interface">
-      <div className="messages-container">
+      <div className="messages-container" ref={messagesContainerRef} onScroll={handleScroll}>
         {conversation.messages.length === 0 ? (
           <div className="empty-state">
             <h2>Start a conversation</h2>
@@ -119,8 +148,6 @@ export default function ChatInterface({
             <span>Consulting the council...</span>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {conversation.messages.length === 0 && (

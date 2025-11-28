@@ -1,5 +1,9 @@
 import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import './StreamingMarkdown.css';
 
 /**
@@ -41,7 +45,12 @@ export default function StreamingMarkdown({ content, isStreaming = false }) {
 
   return (
     <div className={isStreaming ? 'streaming-content' : ''}>
-      <ReactMarkdown>{sanitizedContent}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+      >
+        {sanitizedContent}
+      </ReactMarkdown>
       {isStreaming && <span className="cursor-blink">|</span>}
     </div>
   );
